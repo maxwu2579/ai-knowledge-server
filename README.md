@@ -55,7 +55,8 @@ py ask.py "实习期是多久？"
 | 文件 | 职责 |
 |---|---|
 | `chunker.py` | 读 PDF/TXT/MD，切成块，每块记住来自哪个文件第几页；含两套切块（旧字符窗口 + 方案C段落重叠） |
-| `store.py` | 向量库这一层：存进去、查出来、按文件删除 |
+| `store.py` | 向量库这一层：存进去、查出来、按文件删除；`search` 为向量召回 Top-10 + Cross-Encoder 重排 |
+| `reranker.py` | Cross-Encoder 重排：进程级单例 + lazy loading，失败自动回退纯向量排序 |
 | `ingest.py` | 导入文档的命令行入口（方案C切块） |
 | `ask.py` | 检索 + 中文问题自动英文改写 + 调 DeepSeek 生成答案 |
 | `api.py` | FastAPI 接口：`/health`、`/query`、`/search`、`/documents/upload` |
@@ -87,16 +88,19 @@ DeepSeek 没有 embeddings 接口，所以向量化只能本地做。
 中文/中英混合问题：
   用户问题（中文）
     → [DeepSeek] 自动改写成英文检索查询（只翻译，不回答问题、不补充信息）
-    → 向量检索（all-MiniLM-L6-v2，本地，零 API 费用）
+    → 向量召回 Top-10（all-MiniLM-L6-v2，本地，零 API 费用）
+    → 0.85 阈值过滤（无可靠候选返回空）
+    → Cross-Encoder 重排（ms-marco-MiniLM-L-6-v2，本地，零 API 费用）
     → [DeepSeek] 用原始问题生成答案（语言跟随提问语言，带出处）
 
 英文问题：
   用户问题（英文）
-    → 向量检索（all-MiniLM-L6-v2，本地，零 API 费用）
+    → 向量召回 Top-10 → 阈值过滤 → Cross-Encoder 重排
     → [DeepSeek] 生成答案（带出处）
 
 POST /search（独立检索接口）：
-  任意语言查询 → 向量检索 → 直接返回段落数组（不调用 DeepSeek，零费用）
+  任意语言查询 → 向量召回 Top-10 → 阈值过滤 → Cross-Encoder 重排
+  → 返回段落数组（不调用 DeepSeek，零费用）
 ```
 
 ## API 接口（uvicorn api:app）
@@ -223,14 +227,46 @@ curl -s -X POST http://localhost:8000/documents/upload \
 | 422 | 缺少 file 参数 |
 | 500 | 服务器内部错误 |
 
+## Cross-Encoder 重排（已正式启用）
+
+2026-08 重排实验（50 题，chroma_data_v2 语料，零 DeepSeek）对比了纯向量检索
+与「向量召回 Top-10 + `cross-encoder/ms-marco-MiniLM-L-6-v2` 重排」：
+
+| 方案 | Top-1 | Top-3 |
+|---|---|---|
+| 纯向量检索（基线） | 62% | 80% |
+| **向量 Top-10 + Cross-Encoder 重排（已启用）** | **82%** | **92%** |
+
+正式检索流程（`store.search`，`/search` 与 `/query` 共用）：
+1. 向量召回最多 Top-10 候选（all-MiniLM-L6-v2）；
+2. 0.85 阈值过滤——距离超阈值的候选视为无关，**不进入重排**，
+   无可靠候选时仍返回 `[]`（`/query` 仍返回"资料中找不到"）；
+3. Cross-Encoder 重排，返回重排后的 Top-k；`distance` 字段保持原始向量距离，
+   source/page 元数据随条目保留。
+
+工程细节：
+- 模型进程级单例 + lazy loading：首次请求触发加载（约 8–28 秒，视磁盘缓存），
+  之后复用，并发请求不重复加载；
+- 加载/推理失败：记录 warning（不含敏感信息）并自动回退纯向量排序，
+  `/search`、`/query` 不会因此 500；
+- 每次检索都会重新查库并重排，不维护过期候选缓存（新上传/删除立即可见）；
+- 模型缓存位于用户目录 `~/.cache/huggingface`（项目外，不进入 Git）；
+- **性能**：重排每题约增加 0.34 秒（纯本地推理）；**不产生任何 DeepSeek 费用**
+  （DeepSeek 仅用于查询改写与答案生成两阶段）。
+
+50 题离线口径（无阈值）与正式口径（Top-10 + 0.85 阈值）对比评估逐项一致
+（Top-1 82% / Top-3 92%），阈值加入后无偏差、无新增空结果。
+
 ## 测试
 
 ```bash
-pytest test_api.py test_eval.py test_chunking.py test_chunker.py
+pytest test_api.py test_eval.py test_chunking.py test_chunker.py \
+        test_integration.py test_hybrid.py test_rerank.py test_reranker.py
 ```
 
-最终结果：**130 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
-25 个切块实验测试 + 26 个方案C边界测试）。
+最终结果：**199 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
+25 个切块实验测试 + 26 个方案C边界测试 + 7 个集成测试 + 27 个混合检索测试 +
+12 个重排实验测试 + 19 个重排接入测试）。
 
 真实冒烟测试结果（真实 DeepSeek + 真实向量库）：
 

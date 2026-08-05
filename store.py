@@ -25,10 +25,12 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from chunker import Chunk
+from reranker import rerank
 
 DB_DIR = Path(__file__).parent / "chroma_data_v2"  # 正式库（方案C切块）
 COLLECTION_NAME = "documents"
 EMBED_MODEL = "all-MiniLM-L6-v2"
+RERANK_RECALL = 10  # 向量召回上限（Top-10），再交给 Cross-Encoder 重排
 
 
 def get_collection():
@@ -64,8 +66,15 @@ def add_chunks(chunks: list[Chunk]) -> int:
 
 def search(question: str, top_k: int = 5, threshold: float = 0.85) -> list[dict]:
     """
-    根据问题找出最相关的 top_k 段。
-    返回 [{text, source, page, distance}, ...]，distance 越小越相关。
+    根据问题找出最相关的 top_k 段（向量召回 + Cross-Encoder 重排）。
+
+    流程：向量召回最多 Top-10 候选 → 按 threshold 过滤（distance <= threshold
+    才视为可靠）→ Cross-Encoder 重排 → 返回重排后的前 top_k。
+    返回 [{text, source, page, distance}, ...]；distance 仍是原始向量距离
+    （不因重排改变），排序为重排后的相关度顺序。
+
+    重排模型加载/推理失败时自动回退纯向量排序（不抛异常）；
+    没有任何候选通过阈值时返回 []（“无可靠结果”语义与旧版一致）。
 
     threshold: cosine 距离阈值，只返回距离 <= threshold 的结果。
                0.85 对于 all-MiniLM-L6-v2 是一个合理的默认值。
@@ -77,7 +86,7 @@ def search(question: str, top_k: int = 5, threshold: float = 0.85) -> list[dict]
 
     result = collection.query(
         query_texts=[question],
-        n_results=min(top_k, collection.count()),
+        n_results=min(RERANK_RECALL, collection.count()),
     )
 
     hits = []
@@ -93,7 +102,12 @@ def search(question: str, top_k: int = 5, threshold: float = 0.85) -> list[dict]
                 "page": meta["page"],
                 "distance": dist,
             })
-    return hits
+
+    if not hits:
+        return []
+
+    # Cross-Encoder 重排（失败自动回退原向量顺序）；top_k 截断
+    return rerank(question, hits, top_k=top_k)
 
 
 def delete_source(source: str) -> None:
