@@ -1,0 +1,25 @@
+# 密钥与配置
+.env
+
+# 向量库（可重建，不纳入 git；chroma_data 为回滚库，chroma_data_v2 为正式库）
+chroma_data/
+chroma_data_v2/
+test_chroma/
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 原始文档输入
+docs/
+
+# 评估输出缓存（DeepSeek 改写缓存，仅供离线评估）
+eval_rewrite_cache.json
+
+# 本地工具配置
+.claude/
