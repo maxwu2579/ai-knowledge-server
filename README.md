@@ -50,6 +50,67 @@ py ask.py "实习期是多久？"
 会打印答案，答案里每句话后面带 `[文件名 p.页码]` 的出处，
 下面再列出实际检索到的段落和距离，方便你判断检索准不准。
 
+## Docker 本地部署（不发布到公网）
+
+```yaml
+# docker-compose.yml 要点：
+# - API key 从宿主 .env 传入（env_file），不写死在配置里
+# - 端口只绑定 127.0.0.1:8000（仅本机可访问）
+# - chroma_data_v2 挂载为持久卷（重启后向量数据仍在）
+# - HF 模型缓存挂载可选卷（去掉该行即每次重建后重新下载）
+# - healthcheck 每 30s 探测 /health
+# - MAX_UPLOAD_BYTES 默认 10 MB，可用环境变量覆盖
+```
+
+**PowerShell 命令：**
+
+```powershell
+# 构建镜像（首次会下载 python:3.12-slim 与 CPU 版 torch，约几分钟）
+docker compose build
+
+# 启动（-d 后台运行；首次启动会下载 embedding 与重排模型，约 1-2 分钟）
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 验证服务（Health 通过后再调 /query）
+docker compose ps
+Invoke-RestMethod http://127.0.0.1:8000/health
+
+# 停止容器（卷保留，向量库与模型缓存不丢）
+docker compose down
+
+# 彻底清理（删除容器与卷——会删除容器内的向量库与模型缓存副本，谨慎）
+docker compose down -v
+```
+
+**故障排查：**
+
+```powershell
+# 容器反复重启/Health 不通过：看日志定位
+docker compose logs ai-knowledge-server --tail 50
+
+# 端口被占用
+netstat -ano | findstr :8000
+
+# 模型下载慢/失败：确认可访问 HuggingFace，或先在本机跑一次
+#   py -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+# 然后把 ~/.cache/huggingface 复制进 hf_cache 卷（可选）
+
+# 向量库不生效：确认 chroma_data_v2 卷已挂载
+docker compose exec ai-knowledge-server python -c "from store import stats; print(stats())"
+```
+
+**模型与性能说明：**
+- 镜像内**不打包模型缓存**；首次启动/首次请求时自动下载 embedding 与
+  Cross-Encoder 模型到 `hf_cache` 卷（约 170MB），首次请求会较慢
+  （模型加载 + 下载，视网络 1-5 分钟），之后走卷缓存正常速度；
+- 容器与宿主机共用同一套代码与向量库结构（`chroma_data_v2`），
+  本地数据可无缝迁移；
+- 本机当前未安装 Docker，容器构建与运行**未经真实验证**；配置由
+  `test_docker_config.py` 静态检查（19 项），Docker 可用后按上述命令验证。
+
 ## 各文件在做什么
 
 | 文件 | 职责 |
@@ -69,6 +130,10 @@ py ask.py "实习期是多久？"
 | `eval_recall_rerank.py` | 候选补召回实验（向量Top-15 / BM25补召回，50 题）；结论：不接入 |
 | `build_v2.py` | 用方案C重建 `chroma_data_v2/`（旧库 `chroma_data/` 保留为回滚库） |
 | `smoke_v2.py` | 候选库真实冒烟：`/search`、`/query` 等价流程（英/中各一题） |
+| `Dockerfile` | 运行时镜像：python:3.12-slim + CPU torch + 非 root + uvicorn 8000 |
+| `.dockerignore` | 镜像构建排除：.env/.git/缓存/向量库/日志/评估输出 |
+| `docker-compose.yml` | 本地部署：env_file 传 key、chroma_data_v2 持久卷、127.0.0.1 端口、healthcheck |
+| `test_docker_config.py` | Docker 配置静态检查（19 项，不依赖 Docker 守护进程） |
 
 ## 两个设计上的取舍
 
@@ -312,10 +377,10 @@ pytest test_api.py test_eval.py test_chunking.py test_chunker.py \
         test_recall_rerank.py test_reliability.py
 ```
 
-最终结果：**243 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
+最终结果：**262 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
 25 个切块实验测试 + 26 个方案C边界测试 + 7 个集成测试 + 27 个混合检索测试 +
 12 个重排实验测试 + 19 个重排接入测试 + 11 个补召回实验测试 +
-33 个可靠性加固测试）。
+33 个可靠性加固测试 + 19 个 Docker 配置静态检查）。
 
 真实冒烟测试结果（真实 DeepSeek + 真实向量库）：
 
