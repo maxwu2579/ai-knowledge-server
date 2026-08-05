@@ -223,10 +223,28 @@ curl -s -X POST http://localhost:8000/documents/upload \
 
 | 状态码 | 场景 |
 |--------|------|
-| 400 | 不支持的文件类型 / 扫描版 PDF 提取不到文字 / 空文件 |
-| 413 | 文件超过 32 MB |
+| 400 | 文件名含路径穿越 / 扫描版 PDF 提取不到文字 / 空文件 |
+| 413 | 文件超过大小上限（默认 10 MB，见「API 可靠性加固」） |
+| 415 | 不支持的文件类型（只支持 .pdf .txt .md） |
 | 422 | 缺少 file 参数 |
-| 500 | 服务器内部错误 |
+| 500 | 服务器内部错误（响应不含堆栈与本地路径） |
+
+## API 可靠性加固
+
+- **上传限制**：只允许 `.pdf` `.txt` `.md`；默认最大 10 MB，可用环境变量
+  `MAX_UPLOAD_BYTES` 覆盖（单位：字节）；空文件拒绝；不信任客户端文件名
+  （路径穿越直接 400）；上传的临时文件在处理后立即删除，不残留。
+- **DeepSeek 调用**（`ask.py`）：超时分开配置（连接 10s / 读取 60s /
+  写入 30s）；**有限重试**最多 3 次、退避 1s/2s，仅对网络错误、超时、
+  429 与 500/502/503/504 重试；400/401/403/404/422 立即失败不重试；
+  日志与异常消息不含 API key / Authorization / 敏感正文。
+- **X-Request-ID**：每个请求生成唯一 request_id，通过响应头
+  `X-Request-ID` 返回，可关联服务端日志排障。
+- **结构化日志**：每条请求记录 `request_id / method / path / status /
+  duration_ms`；不记录请求体（不上传的完整文档内容、不记录密钥）。
+- **主要错误状态码**：400 参数/路径穿越、413 文件过大、415 不支持类型、
+  422 参数校验失败、502 DeepSeek 认证/服务/连接异常、503 频率限制、
+  500 未知异常（响应只返回"服务器内部错误"）。
 
 ## Cross-Encoder 重排（已正式启用）
 
@@ -290,12 +308,14 @@ curl -s -X POST http://localhost:8000/documents/upload \
 
 ```bash
 pytest test_api.py test_eval.py test_chunking.py test_chunker.py \
-        test_integration.py test_hybrid.py test_rerank.py test_reranker.py
+        test_integration.py test_hybrid.py test_rerank.py test_reranker.py \
+        test_recall_rerank.py test_reliability.py
 ```
 
-最终结果：**199 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
+最终结果：**243 passed**（44 个接口/改写测试 + 35 个评估脚本测试 +
 25 个切块实验测试 + 26 个方案C边界测试 + 7 个集成测试 + 27 个混合检索测试 +
-12 个重排实验测试 + 19 个重排接入测试）。
+12 个重排实验测试 + 19 个重排接入测试 + 11 个补召回实验测试 +
+33 个可靠性加固测试）。
 
 真实冒烟测试结果（真实 DeepSeek + 真实向量库）：
 

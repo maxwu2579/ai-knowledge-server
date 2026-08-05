@@ -16,6 +16,7 @@
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,16 @@ API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
 MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-pro")
 
+# HTTP 超时：连接/读取分开配置（秒）。读取 60s 覆盖长生成，连接 10s 快速失败。
+HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+
+# 有限重试：最多 3 次尝试（首次 + 2 次重试），重试前退避等待。
+# 仅对网络错误、超时、429 与部分 5xx（500/502/503/504）重试；
+# 4xx 参数/认证错误（400/401/403/404/422）不重试。
+MAX_ATTEMPTS = 3
+RETRY_DELAYS = (1.0, 2.0)
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
 SYSTEM_PROMPT = """You answer questions using only the provided context passages.
 
 Rules:
@@ -97,46 +108,68 @@ def build_context(hits: list[dict]) -> str:
 
 
 def _call_llm(user_msg: str, system_prompt: str = SYSTEM_PROMPT) -> str:
-    """调用大模型，根据 HTTP 状态码抛出不同异常。"""
+    """调用大模型，根据 HTTP 状态码抛出不同异常。
+
+    重试策略：仅对网络错误、超时、429 与 RETRYABLE_STATUS 中的 5xx
+    做有限重试（最多 MAX_ATTEMPTS 次，退避 RETRY_DELAYS）；
+    4xx 参数/认证错误立即抛出，不重试。
+    日志与异常信息均不包含 API key / Authorization 头。
+    """
     if not API_KEY:
         raise LLMAuthError("未配置 DEEPSEEK_API_KEY，请在 .env 中设置。")
 
-    try:
-        resp = httpx.post(
-            f"{BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            json={
-                "model": MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg},
-                ],
-                "temperature": 0,
-            },
-            timeout=60,
-        )
-    except httpx.TimeoutException:
-        raise LLMConnectionError("调用模型超时，请稍后重试。")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise LLMConnectionError("无法连接到模型服务，请检查网络或 LLM_BASE_URL 配置。")
+    last_err: Exception | None = None
 
-    status = resp.status_code
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            resp = httpx.post(
+                f"{BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json={
+                    "model": MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0,
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+        except httpx.TimeoutException:
+            last_err = LLMConnectionError("调用模型超时，请稍后重试。")
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            last_err = LLMConnectionError(
+                "无法连接到模型服务，请检查网络或 LLM_BASE_URL 配置。"
+            )
+        else:
+            status = resp.status_code
 
-    if status in (401, 403):
-        raise LLMAuthError(f"API Key 无效或无权限 (HTTP {status})。")
-    if status == 429:
-        raise LLMRateLimitError("调用频率过高，请稍后重试。")
-    if status >= 500:
-        raise LLMServerError(f"模型服务异常 (HTTP {status})，请稍后重试。")
+            if status in (401, 403):
+                raise LLMAuthError(f"API Key 无效或无权限 (HTTP {status})。")
+            if status in (400, 404, 422):
+                # 参数类 4xx：请求本身有问题，重试无意义
+                raise LLMServerError(f"模型拒绝了请求 (HTTP {status})：{resp.text[:200]}")
+            if status in RETRYABLE_STATUS:
+                last_err = (
+                    LLMRateLimitError("调用频率过高，请稍后重试。")
+                    if status == 429
+                    else LLMServerError(f"模型服务异常 (HTTP {status})，请稍后重试。")
+                )
+            elif not resp.is_success:
+                raise LLMServerError(f"调用模型返回 HTTP {status}：{resp.text[:200]}")
+            else:
+                try:
+                    return resp.json()["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, ValueError) as e:
+                    raise LLMServerError(f"解析模型响应失败：{e}")
 
-    # 其他非 2xx 状态（如 400 Bad Request）
-    if not resp.is_success:
-        raise LLMServerError(f"调用模型返回 HTTP {status}：{resp.text[:200]}")
+        # 网络错误 / 超时 / 429 / 可重试 5xx：退避后重试
+        if attempt < MAX_ATTEMPTS - 1:
+            time.sleep(RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)])
+            continue
+        raise last_err  # 重试耗尽，抛出最后一次错误
 
-    try:
-        return resp.json()["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, ValueError) as e:
-        raise LLMServerError(f"解析模型响应失败：{e}")
+    raise last_err  # 不可达（for 循环内必然 return 或 raise）
 
 
 # ---------------------------------------------------------------------------

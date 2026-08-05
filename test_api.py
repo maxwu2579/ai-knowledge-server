@@ -466,7 +466,8 @@ class TestUpload:
             assert mock_add.call_count == 2
             mock_del.assert_called_with("again.txt")
 
-    def test_unsupported_extension_returns_400(self, client):
+    def test_unsupported_extension_returns_415(self, client):
+        """不支持的文件类型返回 415（可靠性加固后）。"""
         resp = client.post(
             "/documents/upload",
             files={
@@ -477,7 +478,7 @@ class TestUpload:
                 )
             },
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 415
         assert "不支持" in resp.json()["detail"]
 
     def test_supported_extension_succeeds(self, client):

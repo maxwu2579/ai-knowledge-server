@@ -5,9 +5,12 @@ FastAPI 接口：健康检查、文档上传、问答。
     uvicorn api:app --reload --host 0.0.0.0 --port 8000
 """
 
+import logging
 import os
 import shutil
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -27,8 +30,19 @@ from store import add_chunks, delete_source, search as vector_search, stats
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
+logger = logging.getLogger("ai_server")
+if not logger.handlers:
+    # 独立配置结构化请求日志（不干扰 uvicorn 自带日志与测试的 caplog）
+    logger.setLevel(logging.INFO)
+    _console = logging.StreamHandler()
+    _console.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    logger.addHandler(_console)
+
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
-MAX_UPLOAD_BYTES = 32 * 1024 * 1024  # 32 MB
+# 上传大小上限：默认 10 MB，可用环境变量 MAX_UPLOAD_BYTES 覆盖（单位：字节）
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 # ---------------------------------------------------------------------------
 # FastAPI 应用
@@ -140,6 +154,34 @@ class ErrorDetail(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 结构化请求日志 + request_id
+# ---------------------------------------------------------------------------
+
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    """为每个请求生成 request_id（响应头 X-Request-ID 返回），
+    记录方法/路径/状态码/耗时。不记录请求体（不含文档内容与敏感信息）。"""
+    request_id = uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+    start = time.perf_counter()
+
+    response = await call_next(request)
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "request_id=%s method=%s path=%s status=%d duration_ms=%.1f",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# ---------------------------------------------------------------------------
 # 异常处理
 # ---------------------------------------------------------------------------
 
@@ -174,9 +216,16 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # 完整堆栈只进服务端日志（含 request_id 可关联）；响应不暴露堆栈与本地路径
+    logger.exception(
+        "未处理异常 request_id=%s method=%s path=%s",
+        getattr(request.state, "request_id", "-"),
+        request.method,
+        request.url.path,
+    )
     return JSONResponse(
         status_code=500,
-        content={"detail": f"服务器内部错误：{type(exc).__name__}: {exc}"},
+        content={"detail": "服务器内部错误"},
     )
 
 
@@ -269,7 +318,7 @@ async def upload_document(file: UploadFile = File(...)):
     # --- 校验扩展名 -----------------------------------------------------------
     if suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
-            status_code=400,
+            status_code=415,
             detail=f"不支持的文件类型「{suffix}」，目前支持：{' '.join(sorted(SUPPORTED_EXTENSIONS))}",
         )
 
