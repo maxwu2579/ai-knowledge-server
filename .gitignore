@@ -23,3 +23,7 @@ eval_rewrite_cache.json
 
 # 本地工具配置
 .claude/
+
+# Local project notes
+ai.md
+content.md
