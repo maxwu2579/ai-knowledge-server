@@ -1,0 +1,76 @@
+# 密钥与配置
+.env
+.env.*
+!.env.example
+
+# 向量库（可重建，不纳入 git；chroma_data 为回滚库，chroma_data_v2 为正式库）
+chroma_data/
+chroma_data_v2/
+chroma_data_*/
+test_chroma/
+benchmark_models/
+*.onnx
+*.safetensors
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+.pytest-tmp/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 原始文档输入
+docs/
+!docs/
+docs/*
+!docs/API.md
+
+# 评估输出缓存（DeepSeek 改写缓存，仅供离线评估）
+eval_rewrite_cache.json
+eval_acceptance_results.json
+eval_acceptance_report.md
+eval_acceptance_questions.json
+eval_*_results.json
+eval_*_report.md
+
+# 本地工具配置
+.claude/
+.vscode/
+
+# Local project notes
+ai.md
+content.md
+learning_docs/
+
+# Private-corpus experiments and fixtures retained locally only
+build_v2.py
+smoke_v2.py
+eval_chunking.py
+eval_hybrid.py
+eval_questions.py
+eval_recall_rerank.py
+eval_rerank.py
+eval_retrieval.py
+eval_rewrite.py
+eval_bge_*.py
+eval_combo_*.py
+eval_e5.py
+eval_mpnet.py
+eval_mxbai_reranker.py
+eval_para_multi.py
+eval_qwen_bge_small.py
+eval_reranker_*.py
+make_qwen_eval.py
+test_chunker.py
+test_chunking.py
+test_eval.py
+test_hybrid.py
+test_integration.py
+test_recall_rerank.py
+test_rerank.py
+test_onnx_manual.py
+test_qwen_*.py
+test_langfuse.py

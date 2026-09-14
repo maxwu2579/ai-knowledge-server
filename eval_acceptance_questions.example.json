@@ -1,0 +1,38 @@
+[
+  {
+    "id": "sample-en-01",
+    "category": "direct",
+    "language": "en",
+    "question": "How long is the example internship?",
+    "expected_keywords": ["16", "weeks"],
+    "expected_sources": ["sample_handbook.md"],
+    "should_answer": true
+  },
+  {
+    "id": "sample-zh-01",
+    "category": "direct",
+    "language": "zh",
+    "question": "示例实习期有多少周？",
+    "expected_keywords": ["16"],
+    "expected_sources": ["sample_handbook.md"],
+    "should_answer": true
+  },
+  {
+    "id": "sample-mixed-01",
+    "category": "paraphrase",
+    "language": "mixed",
+    "question": "示例 internship 的 job title 是什么？",
+    "expected_keywords": ["AI Programmer"],
+    "expected_sources": ["sample_handbook.md"],
+    "should_answer": true
+  },
+  {
+    "id": "sample-refusal-01",
+    "category": "refusal",
+    "language": "en",
+    "question": "What is the office Wi-Fi password?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false
+  }
+]

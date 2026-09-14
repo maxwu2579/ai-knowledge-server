@@ -1,0 +1,41 @@
+# AI Knowledge Server 本地部署（不发布到公网）
+#
+# - API key 不写死在本文档：从宿主 .env 传入（env_file），或在运行时环境变量提供
+# - 端口只绑定 127.0.0.1（仅本机可访问）
+# - 本地 chroma_data_v2 挂载为持久卷（重启后向量数据仍在）
+# - 模型缓存挂载可选卷（HF 缓存），避免每次重建后重复下载
+#
+# 用法（PowerShell）：
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down        # 停止（不删除卷，向量库保留）
+
+services:
+  ai-knowledge-server:
+    build: .
+    image: ai-knowledge-server:local
+    container_name: ai-knowledge-server
+    ports:
+      - "127.0.0.1:8000:8000"        # 仅本机访问，不暴露到公网
+    env_file:
+      - .env                          # DEEPSEEK_API_KEY / LLM_BASE_URL / LLM_MODEL
+    environment:
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-10485760}"   # 默认 10 MB，可覆盖
+      HF_HOME: /models
+    volumes:
+      - chroma_data_v2:/app/chroma_data_v2   # 持久向量库（正式库，重启保留）
+      - hf_cache:/models                     # 模型缓存卷（可选：删掉此行即每次重建后重新下载）
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s             # 首次启动含模型下载/加载，放宽启动期
+    restart: unless-stopped
+
+volumes:
+  chroma_data_v2:
+    name: ai-knowledge-chroma-data-v2
+  hf_cache:
+    name: ai-knowledge-hf-cache
