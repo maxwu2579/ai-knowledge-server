@@ -4,7 +4,7 @@ API 可靠性加固测试：上传限制 / 路径穿越 / 超时 / 重试条件 
 
 覆盖 ask.py（DeepSeek 调用）与 api.py（上传、中间件、异常处理）。
 不调用真实 DeepSeek（httpx.post 全部 mock），不触碰正式数据库。
-运行：pytest test_reliability.py -v
+运行：pytest tests/test_reliability.py -v
 """
 
 import io

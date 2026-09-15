@@ -2,12 +2,12 @@
 向量库这一层。负责把 chunk 存进去、根据问题找出最相关的几段。
 
 这里用 PersistentClient 而不是内存模式，
-数据会写到磁盘上的 chroma_data_v2/ 文件夹，程序重启后还在。
+数据会写到磁盘上的 data/chroma_data_v2/ 文件夹，程序重启后还在。
 （第一周验收要求"ChromaDB 重启后数据仍存在"，靠的就是这个。）
 
-2026-08：正式数据库已切换为方案 C 切块构建的 chroma_data_v2/。
-旧库 chroma_data/（旧切块）保留未动，作为回滚库：
-    store.py 的 DB_DIR 改回 chroma_data 并重启服务即可回滚。
+2026-08：正式数据库已切换为方案 C 切块构建的 data/chroma_data_v2/。
+旧库 data/chroma_data/（旧切块）保留未动，作为回滚库：
+    store.py 的 DB_DIR 改回 data/chroma_data 并重启服务即可回滚。
 
 embedding 模型用本地的 all-MiniLM-L6-v2：
 - CPU 就能跑，不用显卡
@@ -31,7 +31,7 @@ from langfuse import get_client, observe
 from chunker import Chunk
 from reranker import rerank
 
-DB_DIR = Path(__file__).parent / "chroma_data_v2"  # 正式库（方案C切块）
+DB_DIR = Path(__file__).parent / "data" / "chroma_data_v2"  # 正式库（方案C切块）
 COLLECTION_NAME = "documents"
 EMBED_MODEL = "all-MiniLM-L6-v2"
 RERANK_RECALL = 10  # 去重后的候选上限（Top-10），再交给 Cross-Encoder 重排

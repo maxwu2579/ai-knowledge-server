@@ -35,10 +35,15 @@ Langfuse observes the request pipeline; it is not part of retrieval or ranking.
 | `reranker.py` | Cross-Encoder singleton, reranking, vector-only fallback |
 | `chunker.py` | PDF/TXT/MD parsing and paragraph-aware chunks |
 | `ingest.py` | Command-line document ingestion and knowledge-base stats |
-| `frontend/` | Vue 3 MAX frontend |
+| `frontend/` | Next.js + TypeScript App Router frontend |
+| `evaluation/scripts/` | Offline evaluation runners and experiments |
+| `evaluation/data/` | Evaluation question sets and rewrite cache |
+| `evaluation/reports/` | Generated evaluation results and reports |
+| `tests/` | Python test suite |
+| `data/` | Local ChromaDB stores (ignored by Git) |
 | `docs/API.md` | Developer-facing HTTP API documentation |
-| `eval_acceptance.py` | End-to-end `/query` acceptance runner |
-| `eval_acceptance_questions.example.json` | Fictional example evaluation questions |
+| `evaluation/scripts/eval_acceptance.py` | End-to-end `/query` acceptance runner |
+| `evaluation/data/eval_acceptance_questions.example.json` | Fictional example evaluation questions |
 | `sample_docs/` | Fictional document for trying the public repository |
 
 This public repository contains no real appointment letters, private evaluation
@@ -186,21 +191,21 @@ Startup warm-up uses standard Python logging only and creates no user RAG trace.
 Validate the fictional example question file without calling the API or LLM:
 
 ```powershell
-python eval_acceptance.py --questions eval_acceptance_questions.example.json --validate-only
+python -m evaluation.scripts.eval_acceptance --questions evaluation/data/eval_acceptance_questions.example.json --validate-only
 ```
 
 After importing `sample_docs/` and starting the backend, optionally run the example
 evaluation. This makes real `/query` calls to the configured LLM and may incur cost:
 
 ```powershell
-python eval_acceptance.py --questions eval_acceptance_questions.example.json --base-url http://127.0.0.1:8000
+python -m evaluation.scripts.eval_acceptance --questions evaluation/data/eval_acceptance_questions.example.json --base-url http://127.0.0.1:8000
 ```
 
 To use your own private question set, pass its path with `--questions`; do not commit
 private questions or generated results. The runner writes:
 
-- `eval_acceptance_results.json` — machine-readable per-question results
-- `eval_acceptance_report.md` — failures first, then totals and latency summary
+- `evaluation/reports/eval_acceptance_results.json` — machine-readable per-question results
+- `evaluation/reports/eval_acceptance_report.md` — failures first, then totals and latency summary
 
 The runner checks answer keywords, expected source filenames, refusal behavior,
 average latency, P50, and P95. It never changes threshold, Top-K, prompt, or RAG data.
@@ -210,14 +215,14 @@ average latency, P50, and P95. It never changes threshold, Top-K, prompt, or RAG
 Run the published, self-contained tests:
 
 ```powershell
-python -m pytest -q test_api.py test_reranker.py test_reliability.py test_docker_config.py test_eval_acceptance.py
+python -m pytest -q tests/test_api.py tests/test_reranker.py tests/test_reliability.py tests/test_docker_config.py tests/test_eval_acceptance.py
 ```
 
 If Windows denies access to pytest's shared temporary directory, use a dedicated
 directory inside the project:
 
 ```powershell
-python -m pytest -q --basetemp=.pytest-tmp test_api.py test_reranker.py test_reliability.py test_docker_config.py test_eval_acceptance.py
+python -m pytest -q --basetemp=.pytest-tmp tests/test_api.py tests/test_reranker.py tests/test_reliability.py tests/test_docker_config.py tests/test_eval_acceptance.py
 ```
 
 Frontend production build:

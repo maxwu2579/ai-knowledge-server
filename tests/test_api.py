@@ -2,7 +2,7 @@
 API 自动化测试。
 
 运行：
-    pytest test_api.py -v
+    pytest tests/test_api.py -v
 """
 
 import io

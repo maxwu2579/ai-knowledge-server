@@ -16,9 +16,9 @@ __pycache__
 .claude
 
 # ---- 向量库（体积大、可重建；由 compose 卷挂载提供）----
-chroma_data
-chroma_data_v2
-chroma_data_*
+data/chroma_data
+data/chroma_data_v2
+data/chroma_data_*
 test_chroma
 benchmark_models
 *.onnx

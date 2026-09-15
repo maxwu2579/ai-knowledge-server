@@ -2,11 +2,12 @@
 .env
 .env.*
 !.env.example
+!frontend/.env.local.example
 
-# 向量库（可重建，不纳入 git；chroma_data 为回滚库，chroma_data_v2 为正式库）
-chroma_data/
-chroma_data_v2/
-chroma_data_*/
+# 向量库（可重建，不纳入 git；data/chroma_data 为回滚库，data/chroma_data_v2 为正式库）
+data/chroma_data/
+data/chroma_data_v2/
+data/chroma_data_*/
 test_chroma/
 benchmark_models/
 *.onnx

@@ -1,6 +1,7 @@
 import json
 
-from eval_acceptance import (
+from evaluation.scripts.eval_acceptance import (
+    DEFAULT_QUESTIONS,
     evaluate_response,
     load_questions,
     render_report,
@@ -11,7 +12,12 @@ from eval_acceptance import (
 def test_acceptance_question_file_is_valid_and_representative():
     from pathlib import Path
 
-    questions = load_questions(Path(__file__).parent / "eval_acceptance_questions.example.json")
+    questions = load_questions(
+        Path(__file__).resolve().parents[1]
+        / "evaluation"
+        / "data"
+        / "eval_acceptance_questions.example.json"
+    )
 
     assert len(questions) >= 4
     assert {item["language"] for item in questions} == {"en", "zh", "mixed"}
@@ -124,5 +130,5 @@ def test_summary_and_report_put_failures_first():
 
 
 def test_question_file_is_json_serializable():
-    questions = load_questions(__import__("eval_acceptance").DEFAULT_QUESTIONS)
+    questions = load_questions(DEFAULT_QUESTIONS)
     assert json.loads(json.dumps(questions, ensure_ascii=False)) == questions

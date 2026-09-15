@@ -5,7 +5,7 @@ Docker 部署配置的静态检查（不依赖 Docker 守护进程）。
 不复制敏感文件）、.dockerignore 排除清单、docker-compose.yml 结构
 （无硬编码 API key / 端口绑定 / 持久卷 / healthcheck / MAX_UPLOAD_BYTES）。
 
-运行：pytest test_docker_config.py -v
+运行：pytest tests/test_docker_config.py -v
 """
 
 from pathlib import Path
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
@@ -95,8 +95,8 @@ class TestDockerignore:
         "__pycache__",
         ".pytest_cache",
         ".claude",
-        "chroma_data",
-        "chroma_data_v2",
+        "data/chroma_data",
+        "data/chroma_data_v2",
         "models",
         ".cache",
         "*.log",
@@ -142,7 +142,7 @@ class TestCompose:
     def test_vector_store_persistent_volume(self, compose):
         svc = compose["services"]["ai-knowledge-server"]
         vols = svc["volumes"]
-        assert any("chroma_data_v2:/app/chroma_data_v2" in v for v in vols)
+        assert any("chroma_data_v2:/app/data/chroma_data_v2" in v for v in vols)
 
     def test_healthcheck_hits_health(self, compose):
         svc = compose["services"]["ai-knowledge-server"]

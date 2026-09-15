@@ -15,10 +15,11 @@ from typing import Any
 
 import httpx
 
-ROOT = Path(__file__).parent
-DEFAULT_QUESTIONS = ROOT / "eval_acceptance_questions.json"
-DEFAULT_RESULTS = ROOT / "eval_acceptance_results.json"
-DEFAULT_REPORT = ROOT / "eval_acceptance_report.md"
+from evaluation.paths import EVALUATION_DATA_DIR, EVALUATION_REPORTS_DIR
+
+DEFAULT_QUESTIONS = EVALUATION_DATA_DIR / "eval_acceptance_questions.json"
+DEFAULT_RESULTS = EVALUATION_REPORTS_DIR / "eval_acceptance_results.json"
+DEFAULT_REPORT = EVALUATION_REPORTS_DIR / "eval_acceptance_report.md"
 
 REFUSAL_MARKERS = (
     "资料中找不到",
