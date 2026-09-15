@@ -2,7 +2,7 @@
 
 ## What it does
 
-AI Knowledge Server is a small FastAPI RAG service with a Vue 3 MAX demo UI.
+AI Knowledge Server is a small FastAPI RAG service with a Next.js MAX chat UI.
 It indexes PDF/TXT/Markdown documents, retrieves relevant passages, reranks them
 locally, and asks an LLM to produce a grounded answer with source citations.
 
@@ -110,6 +110,7 @@ failure retains the existing vector-only fallback behavior.
 ```powershell
 cd frontend
 npm install
+Copy-Item .env.local.example .env.local
 npm run dev
 ```
 
@@ -119,7 +120,18 @@ If PowerShell blocks `npm.ps1`, use:
 npm.cmd run dev
 ```
 
-The checked-in Vite configuration binds to `127.0.0.1`. For LAN testing, override it:
+Set the server-only FastAPI URL in `frontend/.env.local`:
+
+```env
+FASTAPI_URL=http://localhost:8000
+```
+
+Open `http://localhost:3000`. The browser posts questions to the Next.js Route
+Handler at `/api/chat`; that server-side handler validates the question and forwards
+it to the existing FastAPI `POST /query` endpoint. `FASTAPI_URL` is not included in
+the browser bundle.
+
+For LAN testing, start Next.js on all interfaces:
 
 ```powershell
 npm.cmd run dev -- --host 0.0.0.0
@@ -128,13 +140,9 @@ npm.cmd run dev -- --host 0.0.0.0
 Another device on the same LAN can then open:
 
 ```text
-http://<HOST_LAN_IP>:5173
+http://<HOST_LAN_IP>:3000
 ```
 
-The Vite development proxy sends `/api/query` to a locally running APISIX gateway
-at `http://127.0.0.1:9080/api/ai/query`. Configure that APISIX route to forward
-to FastAPI `/query` before using the chat UI. This repository does not contain an
-APISIX deployment or route definition. Restart Vite after changing proxy settings.
 LAN access is not public internet exposure; firewall and network rules still apply.
 
 ## API documentation
@@ -237,7 +245,8 @@ current machine; the checked-in configuration is covered by static tests.
 
 ## Production notes
 
-This repository is a local demo system. Its Vite development proxy expects a local
-APISIX route; a managed gateway deployment is not included. A future deployment may
-add authentication, TLS, an internal LLM, and managed infrastructure. Do not expose
-the local development ports to the public internet.
+This repository is a local demo system. The Next.js Route Handler expects the
+FastAPI service configured by `FASTAPI_URL`; deployment and a managed gateway are
+not included. A future deployment may add authentication, TLS, an internal LLM,
+and managed infrastructure. Do not expose local development ports to the public
+internet.
